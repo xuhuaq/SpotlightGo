@@ -1,0 +1,11 @@
+SpotlightGo
+Copyright 2026 SpotlightGo contributors
+
+This project is an independent Go implementation inspired by the API research
+and documented behavior of ORelio/Spotlight-Downloader:
+https://github.com/ORelio/Spotlight-Downloader
+
+Windows Spotlight and Microsoft are trademarks of Microsoft Corporation.
+This project is not affiliated with or endorsed by Microsoft.
+
+Third-party software notices are listed in THIRD_PARTY_NOTICES.md.

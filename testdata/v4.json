@@ -1,0 +1,9 @@
+{
+  "batchrsp": {
+    "items": [
+      {
+        "item": "{\"ad\":{\"landscapeImage\":{\"asset\":\"https://example.invalid/sample_3840x2160.jpg\"},\"title\":\"测试标题\",\"description\":\"测试介绍\",\"copyright\":\"© Test\",\"iconHoverText\":\"备用标题\\r\\n版权\"}}"
+      }
+    ]
+  }
+}

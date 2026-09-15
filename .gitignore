@@ -1,0 +1,13 @@
+/.gocache/
+/.gomodcache/
+/.tools/
+/SpotlightGo.exe
+/*.exe~
+/dist/
+/archive/
+/generated/
+/metadata/
+/config.json
+/state.json
+/spotlight.log
+*.syso
