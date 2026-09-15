@@ -33,7 +33,7 @@ func (a *App) renderWallpaper(record ImageRecord) (string, error) {
 	canvas := image.NewNRGBA(image.Rect(0, 0, bounds.Dx(), bounds.Dy()))
 	draw.Draw(canvas, canvas.Bounds(), source, bounds.Min, draw.Src)
 
-	if a.config.OverlayText && strings.TrimSpace(record.Title) != "" {
+	if a.shouldOverlayTitle(record) {
 		safeBounds := safeBoundsForMonitors(canvas.Bounds(), monitorDimensions())
 		if err := drawTitle(canvas, record.Title, safeBounds); err != nil {
 			logError("叠加图片文字失败，继续使用无文字图片", err)
@@ -53,6 +53,10 @@ func (a *App) renderWallpaper(record ImageRecord) (string, error) {
 		return "", closeErr
 	}
 	return outputPath, nil
+}
+
+func (a *App) shouldOverlayTitle(record ImageRecord) bool {
+	return record.Source != "unsplash" && a.config.OverlayText && strings.TrimSpace(record.Title) != ""
 }
 
 func drawTitle(dst *image.NRGBA, title string, safeBounds image.Rectangle) error {

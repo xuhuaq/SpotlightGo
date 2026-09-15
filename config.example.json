@@ -4,11 +4,17 @@
   "overlay_text": true,
   "auto_download_hours": 24,
   "check_interval_minutes": 15,
+  "default_switch_hours": 6,
   "jpeg_quality": 95,
+  "unsplash_access_key": "",
+  "unsplash_topic": "wallpapers",
+  "unsplash_downloads": 8,
+  "unsplash_min_width": 3840,
+  "unsplash_min_height": 2160,
   "rating_display_hours": {
     "1": 2,
     "2": 8,
-    "3": 24,
+    "3": 6,
     "4": 72,
     "5": 168
   }

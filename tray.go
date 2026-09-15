@@ -22,11 +22,13 @@ func runTray(app *App) {
 		statusItem := systray.AddMenuItem("正在启动…", "当前状态")
 		statusItem.Disable()
 		systray.AddSeparator()
-		downloadItem := systray.AddMenuItem("下载图片", "从 Windows Spotlight 下载并永久归档")
 		switchItem := systray.AddMenuItem("切换图片", "立即切换到另一张本地图片")
 		systray.AddSeparator()
-		likeItem := systray.AddMenuItem("喜欢当前图片 👍", "提高评分并延长展示时间")
-		dislikeItem := systray.AddMenuItem("不喜欢并切换 👎", "降低评分并立即换一张")
+		downloadSpotlightItem := systray.AddMenuItem("下载Spotlight图片", "从 Windows Spotlight 下载并永久归档")
+		downloadUnsplashItem := systray.AddMenuItem("下载Unsplash图片", "下载精选高分辨率高赞图片；未配置密钥时打开配置文件")
+		systray.AddSeparator()
+		likeItem := systray.AddMenuItem("喜欢，收藏", "设为 5 星并将原图保存到 favorites 目录")
+		dislikeItem := systray.AddMenuItem("不喜欢，删除", "删除当前图片及元数据并立即换一张")
 		systray.AddSeparator()
 		openItem := systray.AddMenuItem("打开程序目录", "打开归档、配置和状态文件所在目录")
 		startupItem := systray.AddMenuItemCheckbox("开机自启", "登录 Windows 后自动运行", startupEnabled())
@@ -47,10 +49,16 @@ func runTray(app *App) {
 		go func() {
 			for {
 				select {
-				case <-downloadItem.ClickedCh:
+				case <-downloadSpotlightItem.ClickedCh:
 					go func() {
-						if _, err := app.downloadImages(ctx); err != nil {
-							reportTrayError(app, "下载失败", err)
+						if _, err := app.downloadSpotlightImages(ctx); err != nil {
+							reportTrayError(app, "Spotlight 下载失败", err)
+						}
+					}()
+				case <-downloadUnsplashItem.ClickedCh:
+					go func() {
+						if _, err := app.downloadUnsplashImages(ctx); err != nil {
+							reportTrayError(app, "Unsplash 下载失败", err)
 						}
 					}()
 				case <-switchItem.ClickedCh:
@@ -60,17 +68,13 @@ func runTray(app *App) {
 						}
 					}()
 				case <-likeItem.ClickedCh:
-					if _, err := app.rateCurrent(1); err != nil {
-						reportTrayError(app, "评分失败", err)
+					if err := app.favoriteCurrent(); err != nil {
+						reportTrayError(app, "收藏失败", err)
 					}
 				case <-dislikeItem.ClickedCh:
 					go func() {
-						if _, err := app.rateCurrent(-1); err != nil {
-							reportTrayError(app, "评分失败", err)
-							return
-						}
-						if err := app.switchWallpaper(); err != nil {
-							reportTrayError(app, "切换失败", err)
+						if err := app.deleteCurrentAndSwitch(); err != nil {
+							reportTrayError(app, "删除或切换失败", err)
 						}
 					}()
 				case <-openItem.ClickedCh:

@@ -2,7 +2,8 @@
 # SPDX-License-Identifier: CDDL-1.0
 
 param(
-    [string]$Version = 'dev'
+    [string]$Version = 'dev',
+    [switch]$NoCompress
 )
 
 $ErrorActionPreference = 'Stop'
@@ -30,6 +31,13 @@ try {
     if ($LASTEXITCODE -ne 0) { throw '静态检查失败。' }
     & $goExe build -trimpath -ldflags "-s -w -H=windowsgui -X main.version=$Version" -o SpotlightGo.exe .
     if ($LASTEXITCODE -ne 0) { throw '编译失败。' }
+    $upxExe = Join-Path $projectDir '.tools\upx\upx.exe'
+    if (-not $NoCompress -and (Test-Path -LiteralPath $upxExe)) {
+        & $upxExe --best --lzma --no-progress (Join-Path $projectDir 'SpotlightGo.exe')
+        if ($LASTEXITCODE -ne 0) { throw 'UPX 压缩失败。' }
+    } elseif (-not $NoCompress) {
+        Write-Warning '未找到 UPX，已保留 Go 的 -s -w 基础压缩。可运行 install-portable-upx.ps1 后重新编译。'
+    }
     Write-Host "已生成：$projectDir\SpotlightGo.exe"
 } finally {
     Pop-Location

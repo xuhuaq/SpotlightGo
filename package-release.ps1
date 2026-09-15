@@ -14,6 +14,12 @@ $packageName = "SpotlightGo-$Version-windows-amd64"
 $packageDir = Join-Path $distDir $packageName
 $zipPath = Join-Path $distDir "$packageName.zip"
 
+$upxExe = Join-Path $projectDir '.tools\upx\upx.exe'
+if (-not (Test-Path -LiteralPath $upxExe)) {
+    & (Join-Path $projectDir 'install-portable-upx.ps1')
+    if ($LASTEXITCODE -ne 0) { throw 'UPX 安装失败。' }
+}
+
 $distFull = [System.IO.Path]::GetFullPath($distDir)
 $packageFull = [System.IO.Path]::GetFullPath($packageDir)
 $zipFull = [System.IO.Path]::GetFullPath($zipPath)
@@ -38,6 +44,7 @@ foreach ($file in 'README.md', 'LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md', 'c
     Copy-Item -LiteralPath (Join-Path $projectDir $file) -Destination $packageDir
 }
 Copy-Item -LiteralPath (Join-Path $projectDir 'licenses') -Destination $packageDir -Recurse
+Copy-Item -LiteralPath (Join-Path $projectDir 'assets\ICON_LICENSE.md') -Destination (Join-Path $packageDir 'licenses\SpotlightGo-Icon-CC0.md')
 Compress-Archive -Path (Join-Path $packageDir '*') -DestinationPath $zipPath
 
 $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $zipPath).Hash.ToLowerInvariant()

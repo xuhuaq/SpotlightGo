@@ -19,7 +19,13 @@ type Config struct {
 	OverlayText          bool           `json:"overlay_text"`
 	AutoDownloadHours    int            `json:"auto_download_hours"`
 	CheckIntervalMinutes int            `json:"check_interval_minutes"`
+	DefaultSwitchHours   int            `json:"default_switch_hours"`
 	JPEGQuality          int            `json:"jpeg_quality"`
+	UnsplashAccessKey    string         `json:"unsplash_access_key,omitempty"`
+	UnsplashTopic        string         `json:"unsplash_topic"`
+	UnsplashDownloads    int            `json:"unsplash_downloads"`
+	UnsplashMinWidth     int            `json:"unsplash_min_width"`
+	UnsplashMinHeight    int            `json:"unsplash_min_height"`
 	RatingDisplayHours   map[string]int `json:"rating_display_hours"`
 }
 
@@ -30,6 +36,14 @@ type ImageRecord struct {
 	Title        string    `json:"title,omitempty"`
 	Description  string    `json:"description,omitempty"`
 	Copyright    string    `json:"copyright,omitempty"`
+	Source       string    `json:"source,omitempty"`
+	SourceID     string    `json:"source_id,omitempty"`
+	SourcePage   string    `json:"source_page,omitempty"`
+	Author       string    `json:"author,omitempty"`
+	AuthorPage   string    `json:"author_page,omitempty"`
+	Likes        int       `json:"likes,omitempty"`
+	DownloadAPI  string    `json:"download_location,omitempty"`
+	Favorite     bool      `json:"favorite,omitempty"`
 	Width        int       `json:"width"`
 	Height       int       `json:"height"`
 	Rating       int       `json:"rating"`
@@ -42,7 +56,10 @@ type State struct {
 	Images            map[string]*ImageRecord `json:"images"`
 	CurrentID         string                  `json:"current_id,omitempty"`
 	NextSwitchAt      time.Time               `json:"next_switch_at,omitempty"`
+	ScheduleStartedAt time.Time               `json:"schedule_started_at,omitempty"`
+	ScheduleHours     int                     `json:"schedule_hours,omitempty"`
 	LastDownloadCheck time.Time               `json:"last_download_check,omitempty"`
+	UnsplashPage      int                     `json:"unsplash_page,omitempty"`
 }
 
 type App struct {
@@ -61,11 +78,16 @@ func defaultConfig() Config {
 		OverlayText:          true,
 		AutoDownloadHours:    24,
 		CheckIntervalMinutes: 15,
+		DefaultSwitchHours:   6,
 		JPEGQuality:          95,
+		UnsplashTopic:        "wallpapers",
+		UnsplashDownloads:    8,
+		UnsplashMinWidth:     3840,
+		UnsplashMinHeight:    2160,
 		RatingDisplayHours: map[string]int{
 			"1": 2,
 			"2": 8,
-			"3": 24,
+			"3": 6,
 			"4": 72,
 			"5": 168,
 		},
@@ -80,6 +102,9 @@ func newApp(root string) (*App, error) {
 		return nil, err
 	}
 	if err := os.MkdirAll(filepath.Join(root, "generated"), 0o755); err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(filepath.Join(root, "favorites"), 0o755); err != nil {
 		return nil, err
 	}
 
@@ -102,7 +127,11 @@ func newApp(root string) (*App, error) {
 	if state.Images == nil {
 		state.Images = make(map[string]*ImageRecord)
 	}
-	return &App{root: root, config: cfg, state: state}, nil
+	app := &App{root: root, config: cfg, state: state}
+	if err := app.reconcileSchedule(); err != nil {
+		return nil, err
+	}
+	return app, nil
 }
 
 func normalizeConfig(cfg *Config) {
@@ -123,8 +152,23 @@ func normalizeConfig(cfg *Config) {
 	if cfg.CheckIntervalMinutes < 1 {
 		cfg.CheckIntervalMinutes = 15
 	}
+	if cfg.DefaultSwitchHours < 1 {
+		cfg.DefaultSwitchHours = 6
+	}
 	if cfg.JPEGQuality < 70 || cfg.JPEGQuality > 100 {
 		cfg.JPEGQuality = 95
+	}
+	if strings.TrimSpace(cfg.UnsplashTopic) == "" {
+		cfg.UnsplashTopic = "wallpapers"
+	}
+	if cfg.UnsplashDownloads < 1 || cfg.UnsplashDownloads > 30 {
+		cfg.UnsplashDownloads = 8
+	}
+	if cfg.UnsplashMinWidth < 1 {
+		cfg.UnsplashMinWidth = 3840
+	}
+	if cfg.UnsplashMinHeight < 1 {
+		cfg.UnsplashMinHeight = 2160
 	}
 	defaults := defaultConfig().RatingDisplayHours
 	if cfg.RatingDisplayHours == nil {

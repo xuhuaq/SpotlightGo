@@ -79,6 +79,17 @@ func openDirectory(path string) error {
 	return exec.Command("explorer.exe", path).Start()
 }
 
+func openFile(path string) error {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	if _, err := os.Stat(abs); err != nil {
+		return err
+	}
+	return exec.Command("notepad.exe", abs).Start()
+}
+
 func startupEnabled() bool {
 	key, err := registry.OpenKey(registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Run`, registry.QUERY_VALUE)
 	if err != nil {

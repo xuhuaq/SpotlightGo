@@ -6,8 +6,10 @@
 /dist/
 /archive/
 /generated/
+/favorites/
 /metadata/
 /config.json
 /state.json
 /spotlight.log
 *.syso
+!resource_windows_amd64.syso
