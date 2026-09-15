@@ -17,7 +17,6 @@ $zipPath = Join-Path $distDir "$packageName.zip"
 $upxExe = Join-Path $projectDir '.tools\upx\upx.exe'
 if (-not (Test-Path -LiteralPath $upxExe)) {
     & (Join-Path $projectDir 'install-portable-upx.ps1')
-    if ($LASTEXITCODE -ne 0) { throw 'UPX 安装失败。' }
 }
 
 $distFull = [System.IO.Path]::GetFullPath($distDir)
@@ -30,7 +29,6 @@ foreach ($target in $packageFull, $zipFull) {
 }
 
 & (Join-Path $projectDir 'build.ps1') -Version $Version
-if ($LASTEXITCODE -ne 0) { throw '发布版本编译失败。' }
 
 if (Test-Path -LiteralPath $packageDir) {
     Remove-Item -LiteralPath $packageDir -Recurse -Force
