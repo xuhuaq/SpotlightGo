@@ -102,11 +102,12 @@ func TestFavoriteCurrentCopiesOriginalAndMarksFiveStars(t *testing.T) {
 	}
 	id := strings.Repeat("a", 64)
 	fileName := id[:20] + ".jpg"
+	record := &ImageRecord{ID: id, FileName: fileName, Source: "spotlight", Rating: 3}
 	original := []byte("original image bytes")
-	if err := os.WriteFile(filepath.Join(root, "archive", fileName), original, 0o644); err != nil {
+	if err := os.WriteFile(app.archivePath(record), original, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	app.state.Images[id] = &ImageRecord{ID: id, FileName: fileName, Rating: 3}
+	app.state.Images[id] = record
 	app.state.CurrentID = id
 	if err := app.favoriteCurrent(); err != nil {
 		t.Fatal(err)
@@ -121,6 +122,13 @@ func TestFavoriteCurrentCopiesOriginalAndMarksFiveStars(t *testing.T) {
 	if string(got) != string(original) {
 		t.Fatal("favorite copy differs from archived original")
 	}
+	var metadata ImageRecord
+	if err := readJSON(filepath.Join(root, "favorites", id[:20]+".json"), &metadata); err != nil {
+		t.Fatal(err)
+	}
+	if !metadata.Favorite || metadata.Rating != 5 || metadata.Source != "spotlight" {
+		t.Fatalf("favorite metadata is incomplete: %+v", metadata)
+	}
 }
 
 func TestDeleteOnlyImageRemovesAllCopies(t *testing.T) {
@@ -131,18 +139,20 @@ func TestDeleteOnlyImageRemovesAllCopies(t *testing.T) {
 	}
 	id := strings.Repeat("b", 64)
 	fileName := id[:20] + ".jpg"
+	record := &ImageRecord{ID: id, FileName: fileName, Source: "unsplash", Rating: 3}
 	paths := []string{
-		filepath.Join(root, "archive", fileName),
+		app.archivePath(record),
 		filepath.Join(root, "favorites", fileName),
+		filepath.Join(root, "favorites", id[:20]+".json"),
 		filepath.Join(root, "generated", fileName),
-		filepath.Join(root, "metadata", id[:20]+".json"),
+		app.metadataPath(record),
 	}
 	for _, path := range paths {
 		if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	app.state.Images[id] = &ImageRecord{ID: id, FileName: fileName, Rating: 3}
+	app.state.Images[id] = record
 	app.state.CurrentID = id
 	if err := app.deleteCurrentAndSwitch(); err != nil {
 		t.Fatal(err)
@@ -227,6 +237,23 @@ func TestChooseImageRatingDoesNotOverrideFairRotation(t *testing.T) {
 	}
 }
 
+func TestChooseImageFromSourceUsesOnlyRequestedSource(t *testing.T) {
+	images := map[string]*ImageRecord{
+		"spotlight": {ID: "spotlight", Source: "spotlight", ShowCount: 10},
+		"unsplash":  {ID: "unsplash", Source: "unsplash"},
+	}
+	record, err := chooseImageFromSource(images, "", "spotlight")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if record.ID != "spotlight" {
+		t.Fatalf("selected %q instead of the requested Spotlight image", record.ID)
+	}
+	if _, err := chooseImageFromSource(images, "", "missing-source"); err == nil {
+		t.Fatal("missing source should not select an image")
+	}
+}
+
 func TestTrayIconIsICO(t *testing.T) {
 	icon := trayIcon()
 	if len(icon) < 22 || icon[2] != 1 || icon[4] != 9 {
@@ -241,6 +268,58 @@ func TestTrayIconIsICO(t *testing.T) {
 	}
 }
 
+func TestCurrentStatusStopsAfterSwitchTime(t *testing.T) {
+	record := &ImageRecord{
+		FileName: "unsplash.jpg",
+		Title:    "湖边日出",
+		Rating:   4,
+		Source:   "unsplash",
+		Author:   "Example Photographer",
+	}
+	status := currentStatus(record, 6*time.Hour)
+	if status != "当前：湖边日出（4 星，6 小时后切换）" {
+		t.Fatalf("unexpected tray status: %q", status)
+	}
+}
+
+func TestLegacyStorageMigratesBesideImagesBySource(t *testing.T) {
+	root := t.TempDir()
+	id := strings.Repeat("c", 64)
+	record := &ImageRecord{ID: id, FileName: id[:20] + ".jpg", Source: "unsplash", Rating: 3}
+	if err := os.MkdirAll(filepath.Join(root, "archive"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "metadata"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	legacyImage := filepath.Join(root, "archive", record.FileName)
+	legacyMetadata := filepath.Join(root, "metadata", id[:20]+".json")
+	if err := os.WriteFile(legacyImage, []byte("old image"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSON(legacyMetadata, record); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJSON(filepath.Join(root, "state.json"), State{Images: map[string]*ImageRecord{id: record}}); err != nil {
+		t.Fatal(err)
+	}
+
+	app, err := newApp(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{app.archivePath(record), app.metadataPath(record)} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("migrated file missing: %s: %v", path, err)
+		}
+	}
+	for _, path := range []string{legacyImage, legacyMetadata, filepath.Join(root, "metadata")} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("legacy path still exists: %s", path)
+		}
+	}
+}
+
 func TestRenderedWallpaperKeepsOriginalDimensions(t *testing.T) {
 	root := t.TempDir()
 	app, err := newApp(root)
@@ -248,8 +327,8 @@ func TestRenderedWallpaperKeepsOriginalDimensions(t *testing.T) {
 		t.Fatal(err)
 	}
 	const id = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-	record := ImageRecord{ID: id, FileName: "source.jpg", Title: "原分辨率测试", Rating: 3}
-	source, err := os.Create(filepath.Join(root, "archive", record.FileName))
+	record := ImageRecord{ID: id, FileName: "source.jpg", Source: "spotlight", Title: "原分辨率测试", Rating: 3}
+	source, err := os.Create(app.archivePath(&record))
 	if err != nil {
 		t.Fatal(err)
 	}

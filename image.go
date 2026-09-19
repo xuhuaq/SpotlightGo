@@ -19,7 +19,7 @@ import (
 )
 
 func (a *App) renderWallpaper(record ImageRecord) (string, error) {
-	sourcePath := filepath.Join(a.root, "archive", record.FileName)
+	sourcePath := a.archivePath(&record)
 	input, err := os.Open(sourcePath)
 	if err != nil {
 		return "", err

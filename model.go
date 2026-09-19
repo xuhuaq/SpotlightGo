@@ -6,6 +6,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,8 +99,10 @@ func newApp(root string) (*App, error) {
 	if err := os.MkdirAll(filepath.Join(root, "archive"), 0o755); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(filepath.Join(root, "metadata"), 0o755); err != nil {
-		return nil, err
+	for _, source := range []string{"spotlight", "unsplash"} {
+		if err := os.MkdirAll(filepath.Join(root, "archive", source), 0o755); err != nil {
+			return nil, err
+		}
 	}
 	if err := os.MkdirAll(filepath.Join(root, "generated"), 0o755); err != nil {
 		return nil, err
@@ -128,10 +131,87 @@ func newApp(root string) (*App, error) {
 		state.Images = make(map[string]*ImageRecord)
 	}
 	app := &App{root: root, config: cfg, state: state}
+	if err := app.migrateLegacyStorage(); err != nil {
+		return nil, err
+	}
 	if err := app.reconcileSchedule(); err != nil {
 		return nil, err
 	}
 	return app, nil
+}
+
+// storageSource is deliberately a closed set so records cannot escape the
+// archive directory through a source name received from a remote API.
+func storageSource(source string) string {
+	if strings.EqualFold(strings.TrimSpace(source), "unsplash") {
+		return "unsplash"
+	}
+	return "spotlight"
+}
+
+func (a *App) recordDirectory(record *ImageRecord) string {
+	return filepath.Join(a.root, "archive", storageSource(record.Source))
+}
+
+func (a *App) archivePath(record *ImageRecord) string {
+	return filepath.Join(a.recordDirectory(record), record.FileName)
+}
+
+func (a *App) metadataPath(record *ImageRecord) string {
+	base := strings.TrimSuffix(record.FileName, filepath.Ext(record.FileName))
+	return filepath.Join(a.recordDirectory(record), base+".json")
+}
+
+// migrateLegacyStorage keeps prior installations usable after metadata was
+// moved beside each image and source-specific archive folders were introduced.
+func (a *App) migrateLegacyStorage() error {
+	for _, record := range a.state.Images {
+		if err := validateStoredRecord(record); err != nil {
+			// A malformed historical state entry cannot map to a legacy filename
+			// safely. Leave it untouched; all later file operations validate it.
+			continue
+		}
+		if err := os.MkdirAll(a.recordDirectory(record), 0o755); err != nil {
+			return err
+		}
+		legacyImage := filepath.Join(a.root, "archive", record.FileName)
+		if err := relocateLegacyFile(legacyImage, a.archivePath(record)); err != nil {
+			return err
+		}
+		legacyMetadata := filepath.Join(a.root, "metadata", record.ID[:20]+".json")
+		if err := relocateLegacyFile(legacyMetadata, a.metadataPath(record)); err != nil {
+			return err
+		}
+	}
+	return removeDirectoryIfEmpty(filepath.Join(a.root, "metadata"))
+}
+
+func relocateLegacyFile(from, to string) error {
+	if _, err := os.Stat(from); errors.Is(err, os.ErrNotExist) {
+		return nil
+	} else if err != nil {
+		return err
+	}
+	if _, err := os.Stat(to); err == nil {
+		return fmt.Errorf("迁移已停止：目标文件已存在：%s", to)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	if err := os.Rename(from, to); err != nil {
+		return fmt.Errorf("迁移 %s: %w", from, err)
+	}
+	return nil
+}
+
+func removeDirectoryIfEmpty(path string) error {
+	entries, err := os.ReadDir(path)
+	if errors.Is(err, os.ErrNotExist) || len(entries) != 0 {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	return os.Remove(path)
 }
 
 func normalizeConfig(cfg *Config) {

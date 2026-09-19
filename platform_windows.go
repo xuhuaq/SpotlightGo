@@ -23,8 +23,10 @@ const startupValueName = "SpotlightGo"
 
 var (
 	user32                    = windows.NewLazySystemDLL("user32.dll")
+	shell32                   = windows.NewLazySystemDLL("shell32.dll")
 	procSystemParametersInfoW = user32.NewProc("SystemParametersInfoW")
 	procEnumDisplayMonitors   = user32.NewProc("EnumDisplayMonitors")
+	procShellExecuteW         = shell32.NewProc("ShellExecuteW")
 )
 
 type winRect struct {
@@ -76,7 +78,30 @@ func setWallpaper(path string) error {
 }
 
 func openDirectory(path string) error {
-	return exec.Command("explorer.exe", path).Start()
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(abs)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("不是目录：%s", abs)
+	}
+	operation, err := windows.UTF16PtrFromString("open")
+	if err != nil {
+		return err
+	}
+	target, err := windows.UTF16PtrFromString(abs)
+	if err != nil {
+		return err
+	}
+	result, _, callErr := procShellExecuteW.Call(0, uintptr(unsafe.Pointer(operation)), uintptr(unsafe.Pointer(target)), 0, 0, 1)
+	if result <= 32 {
+		return fmt.Errorf("Windows 无法使用系统关联程序打开目录: %w", callErr)
+	}
+	return nil
 }
 
 func openFile(path string) error {

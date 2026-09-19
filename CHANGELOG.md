@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### Changed
+
+- Enlarge the shared application and tray icon artwork to fill the icon canvas.
+- Keep the tray status concise by ending it after the remaining switch time.
+- Store each image and its JSON metadata together under source-specific Spotlight or Unsplash folders; migrate the previous layout at startup.
+- Split manual switching into separate Spotlight and Unsplash tray commands, and include JSON metadata with favorite copies.
+- Open the current image JSON metadata in Notepad on a left click of the tray icon.
+- Open the program directory through the Windows shell so the user's default file manager is used.
+
 ## [0.1.1] - 2026-09-14
 
 ### Changed

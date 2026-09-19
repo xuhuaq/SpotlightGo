@@ -20,14 +20,24 @@ import (
 func (a *App) switchWallpaper() error {
 	a.workMu.Lock()
 	defer a.workMu.Unlock()
-	return a.switchWallpaperLocked()
+	return a.switchWallpaperForSourceLocked("")
 }
 
 func (a *App) switchWallpaperLocked() error {
+	return a.switchWallpaperForSourceLocked("")
+}
+
+func (a *App) switchWallpaperFromSource(source string) error {
+	a.workMu.Lock()
+	defer a.workMu.Unlock()
+	return a.switchWallpaperForSourceLocked(storageSource(source))
+}
+
+func (a *App) switchWallpaperForSourceLocked(source string) error {
 	a.status("正在选择壁纸…")
 
 	a.mu.Lock()
-	record, err := chooseImage(a.state.Images, a.state.CurrentID)
+	record, err := chooseImageFromSource(a.state.Images, a.state.CurrentID, source)
 	a.mu.Unlock()
 	if err != nil {
 		return err
@@ -81,12 +91,18 @@ func (a *App) favoriteCurrent() error {
 		return err
 	}
 
-	data, err := os.ReadFile(filepath.Join(a.root, "archive", copyOfRecord.FileName))
+	data, err := os.ReadFile(a.archivePath(&copyOfRecord))
 	if err != nil {
 		return fmt.Errorf("读取收藏原图: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(a.root, "favorites", copyOfRecord.FileName), data, 0o644); err != nil {
+	favoriteRecord := copyOfRecord
+	favoriteRecord.Favorite = true
+	favoriteRecord.Rating = 5
+	if err := os.WriteFile(filepath.Join(a.root, "favorites", favoriteRecord.FileName), data, 0o644); err != nil {
 		return fmt.Errorf("保存收藏原图: %w", err)
+	}
+	if err := writeJSON(filepath.Join(a.root, "favorites", favoriteRecord.ID[:20]+".json"), &favoriteRecord); err != nil {
+		return fmt.Errorf("保存收藏信息: %w", err)
 	}
 
 	a.mu.Lock()
@@ -98,7 +114,7 @@ func (a *App) favoriteCurrent() error {
 	record.Favorite = true
 	record.Rating = 5
 	a.setScheduleLocked(time.Now(), record.Rating)
-	if err := writeJSON(filepath.Join(a.root, "metadata", record.ID[:20]+".json"), record); err != nil {
+	if err := writeJSON(a.metadataPath(record), record); err != nil {
 		a.mu.Unlock()
 		return err
 	}
@@ -149,10 +165,11 @@ func (a *App) deleteCurrentAndSwitch() error {
 	a.mu.Unlock()
 
 	paths := []string{
-		filepath.Join(a.root, "archive", copyOfRecord.FileName),
+		a.archivePath(&copyOfRecord),
 		filepath.Join(a.root, "favorites", copyOfRecord.FileName),
+		filepath.Join(a.root, "favorites", copyOfRecord.ID[:20]+".json"),
 		filepath.Join(a.root, "generated", copyOfRecord.ID[:20]+".jpg"),
-		filepath.Join(a.root, "metadata", copyOfRecord.ID[:20]+".json"),
+		a.metadataPath(&copyOfRecord),
 	}
 	var cleanupErr error
 	for _, path := range paths {
@@ -202,16 +219,50 @@ func (a *App) reapplyCurrentWallpaper() error {
 	return nil
 }
 
+func (a *App) openCurrentMetadata() error {
+	a.mu.Lock()
+	record := a.state.Images[a.state.CurrentID]
+	if record == nil {
+		a.mu.Unlock()
+		return fmt.Errorf("当前没有壁纸")
+	}
+	copyOfRecord := *record
+	a.mu.Unlock()
+	if err := validateStoredRecord(&copyOfRecord); err != nil {
+		return err
+	}
+	return openFile(a.metadataPath(&copyOfRecord))
+}
+
 func chooseImage(images map[string]*ImageRecord, currentID string) (*ImageRecord, error) {
+	return chooseImageFromSource(images, currentID, "")
+}
+
+func chooseImageFromSource(images map[string]*ImageRecord, currentID, source string) (*ImageRecord, error) {
 	if len(images) == 0 {
 		return nil, fmt.Errorf("归档中还没有图片，请先下载")
 	}
+	matchingCount := 0
+	for _, record := range images {
+		if source == "" || storageSource(record.Source) == source {
+			matchingCount++
+		}
+	}
 	candidates := make([]*ImageRecord, 0, len(images))
 	for id, record := range images {
-		if len(images) > 1 && id == currentID {
+		if source != "" && storageSource(record.Source) != source {
+			continue
+		}
+		if matchingCount > 1 && id == currentID {
 			continue
 		}
 		candidates = append(candidates, record)
+	}
+	if len(candidates) == 0 {
+		if source != "" {
+			return nil, fmt.Errorf("归档中还没有可切换的 %s 图片，请先下载", source)
+		}
+		return nil, fmt.Errorf("归档中还没有可切换的图片，请先下载")
 	}
 	// Pick from the least-shown, least-recently-shown group. This gives every
 	// archived image a turn before starting another cycle. Rating deliberately
@@ -255,7 +306,7 @@ func (a *App) rateCurrent(delta int) (int, error) {
 	}
 	record.Rating = clamp(record.Rating+delta, 1, 5)
 	a.setScheduleLocked(time.Now(), record.Rating)
-	if err := writeJSON(filepath.Join(a.root, "metadata", record.ID[:20]+".json"), record); err != nil {
+	if err := writeJSON(a.metadataPath(record), record); err != nil {
 		return 0, err
 	}
 	if err := a.saveStateLocked(); err != nil {
@@ -359,11 +410,7 @@ func displayName(record *ImageRecord) string {
 }
 
 func currentStatus(record *ImageRecord, remaining time.Duration) string {
-	status := fmt.Sprintf("当前：%s（%d 星，%s 后切换）", displayName(record), record.Rating, friendlyDuration(remaining))
-	if record.Source == "unsplash" && record.Author != "" {
-		status += fmt.Sprintf(" · Photo by %s on Unsplash", record.Author)
-	}
-	return status
+	return fmt.Sprintf("当前：%s（%d 星，%s后切换）", displayName(record), record.Rating, friendlyDuration(remaining))
 }
 
 func friendlyDuration(d time.Duration) string {

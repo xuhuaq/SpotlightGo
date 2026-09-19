@@ -335,7 +335,7 @@ func (a *App) downloadOne(ctx context.Context, client *http.Client, item spotlig
 				}
 				updated := *existing
 				a.mu.Unlock()
-				if err := writeJSON(filepath.Join(a.root, "metadata", existing.ID[:20]+".json"), updated); err != nil {
+				if err := writeJSON(a.metadataPath(existing), updated); err != nil {
 					return false, err
 				}
 				return false, nil
@@ -389,17 +389,13 @@ func (a *App) downloadOne(ctx context.Context, client *http.Client, item spotlig
 		existing.Likes = item.Likes
 		updated := *existing
 		a.mu.Unlock()
-		if err := writeJSON(filepath.Join(a.root, "metadata", id[:20]+".json"), updated); err != nil {
+		if err := writeJSON(a.metadataPath(existing), updated); err != nil {
 			return false, err
 		}
 		return false, nil
 	}
 	a.mu.Unlock()
 
-	archivePath := filepath.Join(a.root, "archive", fileName)
-	if err := os.WriteFile(archivePath, data, 0o644); err != nil {
-		return false, err
-	}
 	record := &ImageRecord{
 		ID:           id,
 		FileName:     fileName,
@@ -419,7 +415,14 @@ func (a *App) downloadOne(ctx context.Context, client *http.Client, item spotlig
 		Rating:       3,
 		DownloadedAt: time.Now(),
 	}
-	if err := writeJSON(filepath.Join(a.root, "metadata", id[:20]+".json"), record); err != nil {
+	archivePath := a.archivePath(record)
+	if err := os.MkdirAll(filepath.Dir(archivePath), 0o755); err != nil {
+		return false, err
+	}
+	if err := os.WriteFile(archivePath, data, 0o644); err != nil {
+		return false, err
+	}
+	if err := writeJSON(a.metadataPath(record), record); err != nil {
 		return false, err
 	}
 	a.mu.Lock()

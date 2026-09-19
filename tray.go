@@ -18,16 +18,24 @@ func runTray(app *App) {
 		systray.SetIcon(trayIcon())
 		systray.SetTitle("SpotlightGo")
 		systray.SetTooltip("SpotlightGo " + version)
+		systray.SetOnTapped(func() {
+			go func() {
+				if err := app.openCurrentMetadata(); err != nil {
+					reportTrayError(app, "打开当前图片信息失败", err)
+				}
+			}()
+		})
 
 		statusItem := systray.AddMenuItem("正在启动…", "当前状态")
 		statusItem.Disable()
 		systray.AddSeparator()
-		switchItem := systray.AddMenuItem("切换图片", "立即切换到另一张本地图片")
+		switchSpotlightItem := systray.AddMenuItem("切换Spotlight图片", "立即切换到另一张 Spotlight 本地图片")
+		switchUnsplashItem := systray.AddMenuItem("切换Unsplash图片", "立即切换到另一张 Unsplash 本地图片")
 		systray.AddSeparator()
 		downloadSpotlightItem := systray.AddMenuItem("下载Spotlight图片", "从 Windows Spotlight 下载并永久归档")
 		downloadUnsplashItem := systray.AddMenuItem("下载Unsplash图片", "下载精选高分辨率高赞图片；未配置密钥时打开配置文件")
 		systray.AddSeparator()
-		likeItem := systray.AddMenuItem("喜欢，收藏", "设为 5 星并将原图保存到 favorites 目录")
+		likeItem := systray.AddMenuItem("喜欢，收藏", "设为 5 星并将原图和信息保存到 favorites 目录")
 		dislikeItem := systray.AddMenuItem("不喜欢，删除", "删除当前图片及元数据并立即换一张")
 		systray.AddSeparator()
 		openItem := systray.AddMenuItem("打开程序目录", "打开归档、配置和状态文件所在目录")
@@ -44,7 +52,6 @@ func runTray(app *App) {
 			systray.SetTooltip("SpotlightGo " + version + " · " + message)
 			log.Print(message)
 		}
-
 		go app.runScheduler(ctx)
 		go func() {
 			for {
@@ -61,10 +68,16 @@ func runTray(app *App) {
 							reportTrayError(app, "Unsplash 下载失败", err)
 						}
 					}()
-				case <-switchItem.ClickedCh:
+				case <-switchSpotlightItem.ClickedCh:
 					go func() {
-						if err := app.switchWallpaper(); err != nil {
-							reportTrayError(app, "切换失败", err)
+						if err := app.switchWallpaperFromSource("spotlight"); err != nil {
+							reportTrayError(app, "切换 Spotlight 失败", err)
+						}
+					}()
+				case <-switchUnsplashItem.ClickedCh:
+					go func() {
+						if err := app.switchWallpaperFromSource("unsplash"); err != nil {
+							reportTrayError(app, "切换 Unsplash 失败", err)
 						}
 					}()
 				case <-likeItem.ClickedCh:
